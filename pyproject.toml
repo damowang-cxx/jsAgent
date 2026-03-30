@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "har-agent"
+version = "0.1.0"
+description = "Local-first HAR offline analysis engine"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "OpenAI Codex" }]
+dependencies = [
+  "pydantic>=2.7,<3",
+  "PyYAML>=6.0",
+  "Jinja2>=3.1",
+  "typer>=0.12,<1",
+  "tldextract>=5.1",
+  "jsonpath-ng>=1.6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+speedups = ["orjson>=3.10"]
+
+[project.scripts]
+har-agent = "har_agent.cli:app"
+
+[tool.setuptools]
+packages = ["har_agent"]
+
+[tool.setuptools.package-data]
+har_agent = ["reporting/templates/*.j2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

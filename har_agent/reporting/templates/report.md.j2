@@ -1,0 +1,169 @@
+# 执行摘要
+
+- 输入文件：`{{ result.summary.input_file }}`
+- 总请求数：`{{ result.summary.entry_count }}`
+- 命中目标请求数：`{{ result.summary.matched_request_count }}`
+- Cookie 结论数：`{{ result.summary.cookie_lineage_count }}`
+- 字段分析数：`{{ result.summary.field_analysis_count }}`
+- Gap 总数：`{{ result.summary.gap_count }}`
+
+# HAR 健康检查
+
+- `likely_sanitized`: `{{ result.health.likely_sanitized }}`
+- `missing_cookie_headers`: `{{ result.health.missing_cookie_headers }}`
+- `missing_set_cookie_headers`: `{{ result.health.missing_set_cookie_headers }}`
+- `missing_request_bodies`: `{{ result.health.missing_request_bodies }}`
+- `incomplete_timeline`: `{{ result.health.incomplete_timeline }}`
+
+{% if result.health.gaps %}
+| Gap Code | Severity | Message |
+| --- | --- | --- |
+{% for gap in result.health.gaps %}
+| `{{ gap.code }}` | `{{ gap.severity }}` | {{ gap.message }} |
+{% endfor %}
+{% endif %}
+
+# 目标请求概览
+
+{% if result.matched_requests %}
+| Entry | Method | Status | Score | URL |
+| --- | --- | --- | --- | --- |
+{% for item in result.matched_requests %}
+| `{{ item.entry_id }}` | `{{ item.method }}` | `{{ item.status }}` | `{{ item.score }}` | `{{ item.url }}` |
+{% endfor %}
+{% else %}
+未命中显式目标请求规则；当前结果保留自动分析结果。
+{% endif %}
+
+# Cookie 溯源
+
+{% if result.cookie_lineage %}
+{% for item in result.cookie_lineage %}
+## `{{ item.cookie_name }}`
+
+- 首次出现：`{{ item.first_seen }}`
+- confidence：`{{ item.confidence }}`
+- 发送次数：`{{ item.send_events | length }}`
+
+{% if item.set_candidates %}
+| Candidate Type | Ref | Confidence | Rationale |
+| --- | --- | --- | --- |
+{% for candidate in item.set_candidates %}
+| `{{ candidate.source_type }}` | `{{ candidate.source_ref }}` | `{{ candidate.confidence }}` | {{ candidate.rationale }} |
+{% endfor %}
+{% endif %}
+
+{% if item.candidate_generation_logic %}
+| Generation Candidate | Source | Confidence | Rationale |
+| --- | --- | --- | --- |
+{% for candidate in item.candidate_generation_logic %}
+| `{{ candidate.type }}` | `{{ candidate.source or '' }}` | `{{ candidate.confidence }}` | {{ candidate.rationale }} |
+{% endfor %}
+{% endif %}
+
+{% if item.gaps %}
+Gaps:
+{% for gap in item.gaps %}
+- `{{ gap.code }}`: {{ gap.message }}
+{% endfor %}
+{% endif %}
+
+{% if item.alternatives %}
+备选解释：
+{% for alternative in item.alternatives %}
+- {{ alternative }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% else %}
+未发现 Cookie。
+{% endif %}
+
+# 字段分析
+
+{% if result.field_analysis %}
+{% for item in result.field_analysis %}
+## `{{ item.name }}` (`{{ item.scope }}` / `{{ item.selector }}`)
+
+- discovered_candidate：`{{ item.discovered_candidate }}`
+- 首次出现：`{{ item.first_seen }}`
+- confidence：`{{ item.confidence }}`
+- 相关 Cookie：`{{ item.related_cookies | join(', ') if item.related_cookies else '' }}`
+
+{% if item.possible_sources %}
+| Source Type | Ref | Confidence | Rationale |
+| --- | --- | --- | --- |
+{% for candidate in item.possible_sources %}
+| `{{ candidate.source_type }}` | `{{ candidate.source_ref }}` | `{{ candidate.confidence }}` | {{ candidate.rationale }} |
+{% endfor %}
+{% endif %}
+
+{% if item.encodings %}
+编码识别：
+{% for encoding in item.encodings %}
+- `{{ encoding.type }}`: {{ encoding.rationale }}
+{% endfor %}
+{% endif %}
+
+{% if item.heuristics %}
+结构识别：
+{% for heuristic in item.heuristics %}
+- `{{ heuristic.type }}`: {{ heuristic.rationale }}
+{% endfor %}
+{% endif %}
+
+{% if item.candidate_generation_logic %}
+| Generation Candidate | Source | Confidence | Rationale |
+| --- | --- | --- | --- |
+{% for candidate in item.candidate_generation_logic %}
+| `{{ candidate.type }}` | `{{ candidate.source or '' }}` | `{{ candidate.confidence }}` | {{ candidate.rationale }} |
+{% endfor %}
+{% endif %}
+
+{% if include_raw_examples and item.values %}
+值样例：
+```json
+{{ item.values[:3] | tojson(indent=2) }}
+```
+{% endif %}
+
+{% if item.gaps %}
+Gaps:
+{% for gap in item.gaps %}
+- `{{ gap.code }}`: {{ gap.message }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% else %}
+未生成字段分析结果。
+{% endif %}
+
+# 主要 Claims
+
+{% if result.claims %}
+{% for claim in result.claims %}
+- `{{ claim.kind }}` / `{{ claim.confidence }}`: {{ claim.title }} - {{ claim.claim }}
+{% endfor %}
+{% else %}
+当前没有额外 claims。
+{% endif %}
+
+# Gaps 与证据不足说明
+
+{% if result.gaps %}
+{% for gap in result.gaps %}
+- `{{ gap.code }}`: {{ gap.message }}
+{% endfor %}
+{% else %}
+无全局 gaps。
+{% endif %}
+
+# 下一步建议
+
+{% if result.recommendations %}
+{% for item in result.recommendations %}
+- {{ item }}
+{% endfor %}
+{% else %}
+- 可直接基于 `result.json` 继续做规则迭代。
+{% endif %}

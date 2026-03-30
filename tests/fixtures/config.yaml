@@ -1,0 +1,18 @@
+target_requests:
+  - name: login_api
+    url_regex: "/api/login"
+    methods: ["POST"]
+    host_contains: "example.com"
+    header_exists: ["content-type"]
+
+target_cookies:
+  - sid
+
+target_fields:
+  - name: request_token
+    scope: request.json
+    selector: "$.token"
+
+report:
+  include_timeline: true
+  include_raw_examples: true
