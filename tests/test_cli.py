@@ -60,6 +60,61 @@ def test_cli_analyze_with_config_and_explicit_outputs(tmp_path: Path) -> None:
     assert report_path.exists()
 
 
+def test_cli_analyze_with_goal_prompt_generates_analysis_intent(tmp_path: Path) -> None:
+    har_path = str((FIXTURES / "basic.har").resolve())
+    json_path = tmp_path / "goal-result.json"
+    report_path = tmp_path / "goal-report.md"
+
+    result = RUNNER.invoke(
+        app,
+        [
+            "analyze",
+            "--input",
+            har_path,
+            "--goal",
+            '分析 https://example.com/api/login 接口的 "token" 字段生成逻辑',
+            "--output-json",
+            str(json_path),
+            "--output-report",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    assert payload["analysis_intent"]["input_mode"] == "goal_prompt"
+    assert payload["analysis_intent"]["resolved_field"]["name"] == "token"
+    assert payload["targets"]["target_fields"][0]["scope"] == "request.json"
+    assert report_path.exists()
+
+
+def test_cli_analyze_with_goal_file(tmp_path: Path) -> None:
+    har_path = str((FIXTURES / "basic.har").resolve())
+    goal_path = str((FIXTURES / "goal.txt").resolve())
+    json_path = tmp_path / "goal-file-result.json"
+    report_path = tmp_path / "goal-file-report.md"
+
+    result = RUNNER.invoke(
+        app,
+        [
+            "analyze",
+            "--input",
+            har_path,
+            "--goal-file",
+            goal_path,
+            "--output-json",
+            str(json_path),
+            "--output-report",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    assert payload["analysis_intent"]["original_prompt"]
+    assert payload["analysis_intent"]["analysis_kind"] == "field_generation_logic"
+
+
 def test_cli_sanitized_har_keeps_running_and_records_gaps(tmp_path: Path) -> None:
     har_path = str((FIXTURES / "sanitized.har").resolve())
     json_path = tmp_path / "sanitized-result.json"
@@ -83,6 +138,84 @@ def test_cli_sanitized_har_keeps_running_and_records_gaps(tmp_path: Path) -> Non
     gap_codes = {gap["code"] for gap in payload["gaps"]}
     assert "likely_sanitized_har" in gap_codes
     assert report_path.exists()
+
+
+def test_cli_goal_prompt_on_sanitized_har_keeps_resolution_and_analysis_gaps(tmp_path: Path) -> None:
+    har_path = str((FIXTURES / "sanitized.har").resolve())
+    json_path = tmp_path / "sanitized-goal-result.json"
+    report_path = tmp_path / "sanitized-goal-report.md"
+
+    result = RUNNER.invoke(
+        app,
+        [
+            "analyze",
+            "--input",
+            har_path,
+            "--goal",
+            '分析 https://example.com/api/token 接口的 "token" 字段生成逻辑',
+            "--output-json",
+            str(json_path),
+            "--output-report",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    assert payload["analysis_intent"]["resolved_request"]["match_count"] == 1
+    assert payload["analysis_intent"]["resolved_field"]["resolved_scopes"] == ["response.json"]
+    gap_codes = {gap["code"] for gap in payload["gaps"]}
+    assert "likely_sanitized_har" in gap_codes
+    assert report_path.exists()
+
+
+def test_cli_goal_prompt_ambiguous_scope_keeps_multiple_candidate_fields(tmp_path: Path) -> None:
+    har_path = str((FIXTURES / "goal_scope_ambiguous.har").resolve())
+    json_path = tmp_path / "ambiguous-result.json"
+    report_path = tmp_path / "ambiguous-report.md"
+
+    result = RUNNER.invoke(
+        app,
+        [
+            "analyze",
+            "--input",
+            har_path,
+            "--goal",
+            '分析 https://example.com/api/sendcode 接口的 "desc" 字段生成逻辑',
+            "--output-json",
+            str(json_path),
+            "--output-report",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    assert payload["analysis_intent"]["resolution_confidence"] in {"low", "medium"}
+    assert len(payload["targets"]["target_fields"]) == 2
+    scopes = {item["scope"] for item in payload["targets"]["target_fields"]}
+    assert scopes == {"request.json", "response.json"}
+    assert any(gap["code"] == "goal_ambiguous_field_scope" for gap in payload["analysis_intent"]["resolution_gaps"])
+
+
+def test_cli_goal_and_config_together_return_exit_code_2(tmp_path: Path) -> None:
+    har_path = str((FIXTURES / "basic.har").resolve())
+    config_path = str((FIXTURES / "config.yaml").resolve())
+
+    result = RUNNER.invoke(
+        app,
+        [
+            "analyze",
+            "--input",
+            har_path,
+            "--config",
+            config_path,
+            "--goal",
+            '分析 https://example.com/api/login 接口的 "token" 字段生成逻辑',
+        ],
+    )
+
+    assert result.exit_code == 2
 
 
 def test_cli_invalid_config_returns_exit_code_2(tmp_path: Path) -> None:

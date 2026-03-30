@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from har_agent.models.intent import AnalysisIntent
 from har_agent.models.findings import Claim, CookieLineageResult, FieldAnalysisResult, Gap, HealthCheck, MatchedRequest
 
 
@@ -24,6 +25,7 @@ class AnalysisResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     summary: AnalysisSummary
+    analysis_intent: AnalysisIntent
     health: HealthCheck
     targets: dict[str, Any] = Field(default_factory=dict)
     matched_requests: list[MatchedRequest] = Field(default_factory=list)

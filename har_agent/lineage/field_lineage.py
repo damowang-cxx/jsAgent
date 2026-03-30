@@ -15,10 +15,12 @@ def analyze_field_lineage(
     entries: Iterable[NormalizedEntry],
     fields: list[FieldRef],
     *,
+    context_entries: Iterable[NormalizedEntry] | None = None,
     discovered_candidate_names: set[str] | None = None,
 ) -> list[FieldAnalysisResult]:
     entry_list = list(entries)
-    observations = collect_scalar_observations(entry_list)
+    context_list = list(context_entries) if context_entries is not None else entry_list
+    observations = collect_scalar_observations(context_list)
     results: list[FieldAnalysisResult] = []
     discovered_candidate_names = discovered_candidate_names or set()
 

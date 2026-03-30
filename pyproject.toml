@@ -25,8 +25,8 @@ speedups = ["orjson>=3.10"]
 [project.scripts]
 har-agent = "har_agent.cli:app"
 
-[tool.setuptools]
-packages = ["har_agent"]
+[tool.setuptools.packages.find]
+include = ["har_agent*"]
 
 [tool.setuptools.package-data]
 har_agent = ["reporting/templates/*.j2"]

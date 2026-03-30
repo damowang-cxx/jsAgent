@@ -30,7 +30,7 @@ def analyze_cookie_lineage(entries: Iterable[NormalizedEntry], target_cookies: l
             for cookie in [*entry.request.cookies, *entry.response.cookies]
         }
     )
-    cookie_names = target_cookies or available_names
+    cookie_names = available_names if target_cookies is None else target_cookies
     return [_analyze_single_cookie(entry_list, observations, cookie_name) for cookie_name in cookie_names]
 
 

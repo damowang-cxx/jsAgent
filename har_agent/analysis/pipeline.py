@@ -7,6 +7,8 @@ from har_agent.analysis.gaps import assess_har_health, dedupe_gaps
 from har_agent.config import AppConfig, config_to_targets
 from har_agent.analysis.claims import claims_from_cookie_results
 from har_agent.config import TargetRequestRule
+from har_agent.intents.goal_resolver import GoalResolver, build_auto_discovery_intent, build_structured_intent, intent_to_config
+from har_agent.models.intent import AnalysisIntent
 from har_agent.models.normalized import FieldRef
 from har_agent.models.report import AnalysisResult, AnalysisSummary
 from har_agent.inference.generation_candidates import discover_candidate_fields
@@ -17,33 +19,46 @@ from har_agent.parsers.normalizer import normalize_document
 from har_agent.selectors.request_selector import RequestSelector, SelectionHints
 
 
-def analyze_har(input_path: str | Path, config: AppConfig) -> AnalysisResult:
+def analyze_har(input_path: str | Path, config: AppConfig, *, goal: str | None = None) -> AnalysisResult:
     document = load_har_document(input_path)
     normalized, parse_gaps = normalize_document(document)
+    effective_config, analysis_intent = _effective_config_and_intent(config, normalized.entries, goal)
     health = assess_har_health(document, normalized.entries, parse_gaps)
-    cookie_targets = list(config.target_cookies)
-    cookie_lineage = analyze_cookie_lineage(normalized.entries, cookie_targets or None)
+    cookie_target_input = _cookie_target_input(effective_config, analysis_intent)
+    cookie_lineage = analyze_cookie_lineage(normalized.entries, cookie_target_input)
     explicit_field_refs = [
         FieldRef(name=field.name, scope=field.scope, selector=field.selector)
-        for field in config.target_fields
+        for field in effective_config.target_fields
     ]
-    discovered_field_refs = discover_candidate_fields(normalized.entries, explicit_field_refs)
+    discovered_field_refs = _discovered_field_refs(analysis_intent, normalized.entries, explicit_field_refs)
     combined_field_refs = _merge_field_refs(explicit_field_refs, discovered_field_refs)
-    field_analysis = analyze_field_lineage(
+    matched_requests = _select_requests(
         normalized.entries,
+        effective_config.target_requests,
+        cookie_targets={item.cookie_name for item in cookie_lineage},
+        field_refs=combined_field_refs,
+        first_signal_time=None,
+        auto_all_when_no_rules=analysis_intent.input_mode == "auto_discovery",
+    )
+    matched_entry_ids = {item.entry_id for item in matched_requests}
+    focus_entries = [entry for entry in normalized.entries if entry.entry_id in matched_entry_ids] if matched_entry_ids else list(normalized.entries)
+    field_analysis = analyze_field_lineage(
+        focus_entries,
         combined_field_refs,
+        context_entries=normalized.entries,
         discovered_candidate_names={field.name for field in discovered_field_refs},
     ) if combined_field_refs else []
     first_signal_time = _first_signal_time(normalized.entries, cookie_lineage, field_analysis)
     matched_requests = _select_requests(
         normalized.entries,
-        config.target_requests,
+        effective_config.target_requests,
         cookie_targets={item.cookie_name for item in cookie_lineage},
         field_refs=combined_field_refs,
         first_signal_time=first_signal_time,
+        auto_all_when_no_rules=analysis_intent.input_mode == "auto_discovery",
     )
     claims = claims_from_cookie_results(cookie_lineage, field_analysis)
-    all_gaps = [*health.gaps]
+    all_gaps = [*health.gaps, *analysis_intent.resolution_gaps]
     for item in cookie_lineage:
         all_gaps.extend(item.gaps)
     for item in field_analysis:
@@ -61,8 +76,9 @@ def analyze_har(input_path: str | Path, config: AppConfig) -> AnalysisResult:
     )
     return AnalysisResult(
         summary=summary,
+        analysis_intent=analysis_intent,
         health=health,
-        targets=config_to_targets(config),
+        targets=config_to_targets(effective_config),
         matched_requests=matched_requests,
         cookie_lineage=cookie_lineage,
         field_analysis=field_analysis,
@@ -70,6 +86,27 @@ def analyze_har(input_path: str | Path, config: AppConfig) -> AnalysisResult:
         gaps=all_gaps,
         recommendations=recommendations,
     )
+
+
+def _effective_config_and_intent(config: AppConfig, entries: list, goal: str | None) -> tuple[AppConfig, AnalysisIntent]:
+    if goal:
+        intent = GoalResolver().resolve(goal, entries)
+        return intent_to_config(intent), intent
+    if config.target_requests or config.target_cookies or config.target_fields:
+        return config, build_structured_intent(config)
+    return config, build_auto_discovery_intent()
+
+
+def _cookie_target_input(config: AppConfig, intent: AnalysisIntent) -> list[str] | None:
+    if intent.input_mode == "auto_discovery":
+        return None
+    return list(config.target_cookies)
+
+
+def _discovered_field_refs(intent: AnalysisIntent, entries, explicit_field_refs: list[FieldRef]) -> list[FieldRef]:
+    if intent.input_mode == "goal_prompt":
+        return []
+    return discover_candidate_fields(entries, explicit_field_refs)
 
 
 def _merge_field_refs(explicit_fields: list[FieldRef], discovered_fields: list[FieldRef]) -> list[FieldRef]:
@@ -97,7 +134,7 @@ def _first_signal_time(entries, cookie_lineage, field_analysis):
     return min(candidates) if candidates else None
 
 
-def _select_requests(entries, rules, *, cookie_targets: set[str], field_refs: list[FieldRef], first_signal_time):
+def _select_requests(entries, rules, *, cookie_targets: set[str], field_refs: list[FieldRef], first_signal_time, auto_all_when_no_rules: bool):
     hints = SelectionHints(
         target_cookies=cookie_targets,
         target_fields=field_refs,
@@ -117,8 +154,10 @@ def _select_requests(entries, rules, *, cookie_targets: set[str], field_refs: li
                     )
         return sorted(aggregated.values(), key=lambda item: (-item.score, item.entry_id))
 
-    selector = RequestSelector(TargetRequestRule(name="auto_all"))
-    return selector.select(entries, hints=hints)[:20]
+    if auto_all_when_no_rules:
+        selector = RequestSelector(TargetRequestRule(name="auto_all"))
+        return selector.select(entries, hints=hints)[:20]
+    return []
 
 
 def _recommendations_from_gaps(gaps):

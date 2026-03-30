@@ -7,6 +7,63 @@
 - 字段分析数：`{{ result.summary.field_analysis_count }}`
 - Gap 总数：`{{ result.summary.gap_count }}`
 
+# 用户目标
+
+- 输入模式：`{{ result.analysis_intent.input_mode }}`
+- 分析类型：`{{ result.analysis_intent.analysis_kind }}`
+- 解析置信度：`{{ result.analysis_intent.resolution_confidence }}`
+{% if result.analysis_intent.original_prompt %}
+- 原始提示词：`{{ result.analysis_intent.original_prompt }}`
+{% else %}
+- 原始提示词：未提供，使用结构化配置或自动发现模式
+{% endif %}
+
+# 目标解析结果
+
+{% if result.analysis_intent.resolved_request %}
+## 请求目标
+
+- 原始 URL：`{{ result.analysis_intent.resolved_request.url or '' }}`
+- host_contains：`{{ result.analysis_intent.resolved_request.host_contains or '' }}`
+- path_contains：`{{ result.analysis_intent.resolved_request.path_contains or '' }}`
+- 匹配请求数：`{{ result.analysis_intent.resolved_request.match_count }}`
+{% if result.analysis_intent.resolved_request.matched_urls %}
+- 候选 URL：
+{% for item in result.analysis_intent.resolved_request.matched_urls %}
+  - `{{ item }}`
+{% endfor %}
+{% endif %}
+{% endif %}
+
+{% if result.analysis_intent.resolved_field %}
+## 字段目标
+
+- 字段名：`{{ result.analysis_intent.resolved_field.name or '' }}`
+- scope hint：`{{ result.analysis_intent.resolved_field.scope_hint or '' }}`
+- resolved scopes：`{{ result.analysis_intent.resolved_field.resolved_scopes | join(', ') }}`
+- candidate scopes：`{{ result.analysis_intent.resolved_field.candidate_scopes | join(', ') }}`
+{% endif %}
+
+{% if result.analysis_intent.resolved_cookie_name %}
+## Cookie 目标
+
+- Cookie 名：`{{ result.analysis_intent.resolved_cookie_name }}`
+{% endif %}
+
+{% if result.analysis_intent.resolution_notes %}
+解析说明：
+{% for note in result.analysis_intent.resolution_notes %}
+- {{ note }}
+{% endfor %}
+{% endif %}
+
+{% if result.analysis_intent.resolution_gaps %}
+解析阶段 gaps：
+{% for gap in result.analysis_intent.resolution_gaps %}
+- `{{ gap.code }}`: {{ gap.message }}
+{% endfor %}
+{% endif %}
+
 # HAR 健康检查
 
 - `likely_sanitized`: `{{ result.health.likely_sanitized }}`
@@ -32,7 +89,7 @@
 | `{{ item.entry_id }}` | `{{ item.method }}` | `{{ item.status }}` | `{{ item.score }}` | `{{ item.url }}` |
 {% endfor %}
 {% else %}
-未命中显式目标请求规则；当前结果保留自动分析结果。
+未命中显式目标请求；当前结果保留自动分析结果。
 {% endif %}
 
 # Cookie 溯源
