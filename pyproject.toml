@@ -16,6 +16,7 @@ dependencies = [
   "typer>=0.12,<1",
   "tldextract>=5.1",
   "jsonpath-ng>=1.6",
+  "langgraph>=1.1,<2",
 ]
 
 [project.optional-dependencies]

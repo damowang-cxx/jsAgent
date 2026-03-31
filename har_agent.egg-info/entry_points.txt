@@ -1,2 +1,0 @@
-[console_scripts]
-har-agent = har_agent.cli:app

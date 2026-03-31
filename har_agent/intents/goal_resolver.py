@@ -33,12 +33,30 @@ EXPLICIT_SCOPE_MAP = {
     "response.cookie": ["response.cookie"],
 }
 
-URL_RE = re.compile(r"https?://[^\s\"'“”‘’<>]+", re.IGNORECASE)
+GENERIC_TARGET_TOKENS = {
+    "analyze",
+    "analysis",
+    "field",
+    "fields",
+    "cookie",
+    "cookies",
+    "endpoint",
+    "api",
+    "request",
+    "response",
+    "generation",
+    "logic",
+    "origin",
+    "source",
+    "set",
+}
+
+URL_RE = re.compile(r"https?://[^\s\"'“”‘’>]+", re.IGNORECASE)
 HOST_RE = re.compile(r"\b(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b")
 PATH_RE = re.compile(r"/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+")
 QUOTED_RE = re.compile(r"[\"“'‘]([^\"”'’]{1,200})[\"”'’]")
 FIELD_RE = re.compile(r"([\w\u4e00-\u9fff-]+)\s*字段")
-COOKIE_NAME_RE = re.compile(r"(?:cookie|Cookie)\s*[\"“'‘]?([\w-]{1,128})[\"”'’]?")
+COOKIE_NAME_RE = re.compile(r"(?:cookie|Cookie)\s*(?:name|named|called)?\s*[\"“'‘]?([\w-]{1,128})[\"”'’]?")
 
 
 class GoalResolver:
@@ -57,7 +75,9 @@ class GoalResolver:
         elif host_contains or path_contains:
             resolution_notes.append("Partial request target extracted from goal prompt.")
         else:
-            resolution_gaps.append(make_gap("goal_missing_request_target", "No request URL or path could be extracted from the goal prompt.", "medium"))
+            resolution_gaps.append(
+                make_gap("goal_missing_request_target", "No request URL or path could be extracted from the goal prompt.", "medium")
+            )
 
         if resolved_request.match_count > 1:
             resolution_gaps.append(
@@ -80,7 +100,9 @@ class GoalResolver:
         resolved_field = None
         if analysis_kind.startswith("field_"):
             if not field_name:
-                resolution_gaps.append(make_gap("goal_missing_field_name", "No target field name could be extracted from the goal prompt.", "high"))
+                resolution_gaps.append(
+                    make_gap("goal_missing_field_name", "No target field name could be extracted from the goal prompt.", "high")
+                )
             else:
                 resolved_field, field_notes, field_gaps = _resolve_field(
                     entries=entries,
@@ -92,7 +114,9 @@ class GoalResolver:
                 resolution_gaps.extend(field_gaps)
         elif analysis_kind.startswith("cookie_"):
             if not cookie_name:
-                resolution_gaps.append(make_gap("goal_missing_cookie_name", "No target cookie name could be extracted from the goal prompt.", "high"))
+                resolution_gaps.append(
+                    make_gap("goal_missing_cookie_name", "No target cookie name could be extracted from the goal prompt.", "high")
+                )
             else:
                 resolution_notes.append("Cookie name extracted from goal prompt.")
 
@@ -176,7 +200,7 @@ def build_auto_discovery_intent() -> AnalysisIntent:
     return AnalysisIntent(
         input_mode="auto_discovery",
         original_prompt=None,
-        analysis_kind="field_origin",
+        analysis_kind="auto_discovery",
         resolved_request=None,
         resolved_field=None,
         resolved_cookie_name=None,
@@ -206,7 +230,7 @@ def _extract_full_url(prompt: str) -> str | None:
     match = URL_RE.search(prompt)
     if not match:
         return None
-    return match.group(0).rstrip("，。；,.);）】】>")
+    return match.group(0).rstrip("，。；,.);）》]")
 
 
 def _extract_host_and_path(prompt: str, full_url: str | None) -> tuple[str | None, str | None]:
@@ -270,9 +294,13 @@ def _extract_field_name(prompt: str, analysis_kind: str) -> str | None:
     if field_match:
         return field_match.group(1)
     if analysis_kind.startswith("field_"):
-        simple = re.search(r"\b([A-Za-z_][A-Za-z0-9_-]{0,127})\b", prompt)
-        if simple:
-            return simple.group(1)
+        scrubbed = URL_RE.sub(" ", prompt)
+        before_field = re.search(r"\b([A-Za-z_][A-Za-z0-9_-]{0,127})\b\s+field\b", scrubbed, re.IGNORECASE)
+        if before_field and before_field.group(1).lower() not in GENERIC_TARGET_TOKENS:
+            return before_field.group(1)
+        after_field = re.search(r"\bfield\b\s+[\"“'‘]?([A-Za-z_][A-Za-z0-9_-]{0,127})[\"”'’]?", scrubbed, re.IGNORECASE)
+        if after_field and after_field.group(1).lower() not in GENERIC_TARGET_TOKENS:
+            return after_field.group(1)
     return None
 
 
@@ -281,8 +309,12 @@ def _extract_cookie_name(prompt: str, analysis_kind: str, field_name: str | None
         return None
     match = COOKIE_NAME_RE.search(prompt)
     if match:
-        return match.group(1)
-    return field_name
+        candidate = match.group(1)
+        if candidate.lower() not in GENERIC_TARGET_TOKENS:
+            return candidate
+    if field_name and field_name.lower() not in GENERIC_TARGET_TOKENS:
+        return field_name
+    return None
 
 
 def _resolve_field(

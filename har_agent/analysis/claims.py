@@ -38,8 +38,8 @@ def claims_from_cookie_results(cookie_results: list, field_results: list) -> lis
         claims.append(
             build_claim(
                 claim_id=f"cookie-{index}",
-                title=f"Cookie {result.cookie_name} 溯源",
-                claim=f"{result.cookie_name} 的当前溯源结论为 {result.first_seen}",
+                title=f"Cookie {result.cookie_name} lineage",
+                claim=f"Cookie {result.cookie_name} was first observed as {result.first_seen}.",
                 confidence=result.confidence,
                 kind="direct_evidence" if result.set_candidates else "unresolved",
                 evidence=evidence,
@@ -56,8 +56,8 @@ def claims_from_cookie_results(cookie_results: list, field_results: list) -> lis
         claims.append(
             build_claim(
                 claim_id=f"field-{index}",
-                title=f"字段 {result.name} 分析",
-                claim=f"{result.name} 首次出现在 {result.first_seen or '未出现'}",
+                title=f"Field {result.name} analysis",
+                claim=f"Field {result.name} was first observed at {result.first_seen or 'not observed'}.",
                 confidence=result.confidence,
                 kind="inferred_candidate" if result.possible_sources else "unresolved",
                 evidence=evidence,
